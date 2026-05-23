@@ -127,6 +127,20 @@ input:focus,select:focus{outline:none;border-color:var(--green2)}
 .empty{text-align:center;padding:32px 16px;color:var(--text3);font-size:13px}
 .empty-icon{font-size:36px;margin-bottom:8px;opacity:.35}
 
+/* Quick-add modal */
+.qa-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:flex-end;justify-content:center}
+.qa-sheet{background:var(--bg);border-radius:var(--radius-lg) var(--radius-lg) 0 0;padding:18px 16px 32px;width:100%;max-width:480px;box-shadow:0 -4px 24px rgba(0,0,0,.15)}
+.qa-sheet h3{font-size:15px;font-weight:600;margin-bottom:14px;color:var(--text)}
+.qa-sheet .qa-row{display:flex;gap:8px;margin-bottom:12px}
+.qa-sheet .qa-row input{flex:1;padding:10px 12px;font-size:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font-family:inherit}
+.qa-sheet .qa-row input:focus{outline:none;border-color:var(--green2)}
+.qa-sheet .qa-row select{width:78px;flex:none;padding:10px 6px;font-size:13px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)}
+.qa-btns{display:flex;gap:8px}
+.qa-btns button{flex:1;padding:11px;border-radius:var(--radius);font-size:14px;font-weight:500;cursor:pointer;border:1px solid var(--border)}
+.qa-btns .qa-ok{background:var(--green);color:#fff;border-color:var(--green)}
+.qa-btns .qa-cancel{background:var(--bg2);color:var(--text2)}
+.qa-btns button:active{opacity:.75}
+
 /* Toast */
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);padding:9px 18px;border-radius:var(--radius-lg);font-size:13px;opacity:0;transition:.3s;z-index:100;pointer-events:none;white-space:nowrap;max-width:90vw}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -286,6 +300,26 @@ input:focus,select:focus{outline:none;border-color:var(--green2)}
 </div><!-- /app -->
 
 <div class="toast" id="toast"></div>
+
+<!-- Quick-add modal -->
+<div class="qa-overlay" id="qa-overlay" style="display:none" onclick="qaCancel(event)">
+  <div class="qa-sheet" onclick="event.stopPropagation()">
+    <h3 id="qa-title">Ajouter</h3>
+    <div class="qa-row">
+      <input type="text" id="qa-input" placeholder="Nom…" onkeydown="if(event.key==='Enter')qaConfirm()">
+      <select id="qa-unit" style="display:none">
+        <option value="kg">kg</option><option value="L">L</option>
+        <option value="g">g</option><option value="ml">ml</option>
+        <option value="sac">sac</option><option value="dose">dose</option>
+        <option value="unité">unité</option>
+      </select>
+    </div>
+    <div class="qa-btns">
+      <button class="qa-cancel" onclick="qaClose()">Annuler</button>
+      <button class="qa-ok" onclick="qaConfirm()">Ajouter</button>
+    </div>
+  </div>
+</div>
 
 <!-- Google API -->
 <script src="https://apis.google.com/js/api.js"></script>
@@ -514,12 +548,79 @@ function switchTab(name){
    ========================================================= */
 function today(){ return new Date().toISOString().split('T')[0]; }
 
-function buildOpts(arr, val=''){
+function buildOpts(arr, val='', addType=''){
+  const addOpt = addType ? `<option value="__add__">+ Ajouter…</option>` : '';
   return `<option value="">—</option>`+arr.map(a=>
     `<option value="${esc(a)}" ${val===a?'selected':''}>${esc(a)}</option>`
-  ).join('');
+  ).join('')+addOpt;
 }
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+/* Quick-add modal */
+let qaState = null; // {type, rowType, rowIdx, field, selectEl}
+
+function qaOpen(type, rowType, rowIdx, field, selectEl){
+  qaState = {type, rowType, rowIdx, field, selectEl};
+  const titles = {parcelle:'Nouvelle parcelle', culture:'Nouvelle culture', product:'Nouveau produit'};
+  document.getElementById('qa-title').textContent = titles[type]||'Ajouter';
+  document.getElementById('qa-input').value = '';
+  document.getElementById('qa-unit').style.display = type==='product'?'block':'none';
+  document.getElementById('qa-overlay').style.display = 'flex';
+  setTimeout(()=>document.getElementById('qa-input').focus(), 100);
+}
+
+function qaClose(){
+  // Restore select to previous value
+  if(qaState && qaState.selectEl){
+    const prev = qaState.rowType==='treat'
+      ? data.treatments[qaState.rowIdx][qaState.field]
+      : data.stocks[qaState.rowIdx][qaState.field];
+    qaState.selectEl.value = prev||'';
+  }
+  document.getElementById('qa-overlay').style.display='none';
+  qaState=null;
+}
+
+function qaCancel(e){ qaClose(); }
+
+function qaConfirm(){
+  if(!qaState) return;
+  const name = document.getElementById('qa-input').value.trim();
+  if(!name){ document.getElementById('qa-input').focus(); return; }
+
+  const {type, rowType, rowIdx, field} = qaState;
+
+  if(type==='parcelle'){
+    if(!data.parcelles) data.parcelles=[];
+    if(!data.parcelles.includes(name)) data.parcelles.push(name);
+  } else if(type==='culture'){
+    if(!data.cultures) data.cultures=[];
+    if(!data.cultures.includes(name)) data.cultures.push(name);
+  } else if(type==='product'){
+    if(!data.products) data.products=[];
+    const unit = document.getElementById('qa-unit').value;
+    if(!data.products.find(p=>p.name===name)) data.products.push({name,unit});
+  }
+
+  if(rowType==='treat') updT(rowIdx, field, name);
+  else if(rowType==='stock') updS(rowIdx, field, name);
+
+  document.getElementById('qa-overlay').style.display='none';
+  qaState=null;
+  save();
+  renderTreatments();
+  renderStocks();
+  renderStockBadges();
+}
+
+function handleSelectChange(sel, rowType, rowIdx, field){
+  if(sel.value==='__add__'){
+    qaOpen(field, rowType, rowIdx, field, sel);
+  } else {
+    if(rowType==='treat') updT(rowIdx, field, sel.value);
+    else if(rowType==='stock') updS(rowIdx, field, sel.value);
+  }
+}
 
 function showToast(msg){
   const t = document.getElementById('toast');
@@ -553,12 +654,12 @@ function renderTreatments(){
   tb.innerHTML = data.treatments.map((t,i)=>`
     <tr>
       <td><input type="date" value="${esc(t.date)}" onchange="updT(${i},'date',this.value)"></td>
-      <td><select onchange="updT(${i},'parcelle',this.value)">${buildOpts(data.parcelles,t.parcelle)}</select></td>
+      <td><select onchange="handleSelectChange(this,'treat',${i},'parcelle')">${buildOpts(data.parcelles,t.parcelle,'parcelle')}</select></td>
       <td><input type="text" value="${esc(t.jardin)}" placeholder="n°" onchange="updT(${i},'jardin',this.value)"></td>
       <td><input type="text" value="${esc(t.planche)}" placeholder="n°" onchange="updT(${i},'planche',this.value)"></td>
-      <td><select onchange="updT(${i},'culture',this.value)">${buildOpts(data.cultures,t.culture)}</select></td>
+      <td><select onchange="handleSelectChange(this,'treat',${i},'culture')">${buildOpts(data.cultures,t.culture,'culture')}</select></td>
       <td><input type="number" value="${esc(t.surface)}" min="0" step="0.1" placeholder="m²" onchange="updT(${i},'surface',this.value)"></td>
-      <td><select onchange="updT(${i},'product',this.value)">${buildOpts(data.products.map(p=>p.name),t.product)}</select></td>
+      <td><select onchange="handleSelectChange(this,'treat',${i},'product')">${buildOpts(data.products.map(p=>p.name),t.product,'product')}</select></td>
       <td><input type="number" value="${esc(t.qty)}" min="0" step="0.01" onchange="updT(${i},'qty',this.value)"></td>
       <td><input type="text" value="${esc(t.note)}" placeholder="…" onchange="updT(${i},'note',this.value)"></td>
       <td><button class="btn-del-row" onclick="delTreat(${i})" aria-label="Supprimer">
@@ -602,7 +703,7 @@ function renderStocks(){
   tb.innerHTML = data.stocks.map((s,i)=>`
     <tr>
       <td><input type="date" value="${esc(s.date)}" onchange="updS(${i},'date',this.value)"></td>
-      <td><select onchange="updS(${i},'product',this.value)">${buildOpts(data.products.map(p=>p.name),s.product)}</select></td>
+      <td><select onchange="handleSelectChange(this,'stock',${i},'product')">${buildOpts(data.products.map(p=>p.name),s.product,'product')}</select></td>
       <td><input type="number" value="${esc(s.qty)}" min="0" step="0.01" onchange="updS(${i},'qty',this.value)"></td>
       <td><input type="text" value="${esc(s.fournisseur)}" placeholder="Fournisseur" onchange="updS(${i},'fournisseur',this.value)"></td>
       <td><button class="btn-del-row" onclick="delStock(${i})" aria-label="Supprimer">
