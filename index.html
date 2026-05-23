@@ -329,7 +329,7 @@ input:focus,select:focus{outline:none;border-color:var(--green2)}
 /* =========================================================
    DATA
    ========================================================= */
-const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+const SCOPES = 'https://www.googleapis.com/auth/drive';
 const DRIVE_FILENAME = 'maraicher_data.json';
 const DRIVE_MIME = 'application/json';
 
@@ -453,9 +453,15 @@ async function findOrCreateFile(){
         fields:'id'
       });
       driveState.fileId = createRes.result.id;
-      await pushToDrive();
     }
-  }catch(e){ showDriveStatus('Erreur Drive: '+e.message,'error'); }
+    // Always save fileId so next session finds the same file
+    localStorage.setItem('maraicher_drive', JSON.stringify({
+      fileId:driveState.fileId, clientId:driveState.clientId, lastSync:driveState.lastSync
+    }));
+    showDriveStatus('Fichier Drive trouvé: '+driveState.fileId.slice(0,12)+'…','info');
+  }catch(e){
+    showDriveStatus('Erreur findOrCreate: '+e.message,'error');
+  }
 }
 
 async function pullFromDrive(){
