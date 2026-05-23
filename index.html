@@ -332,6 +332,7 @@ input:focus,select:focus{outline:none;border-color:var(--green2)}
 const SCOPES = 'https://www.googleapis.com/auth/drive';
 const DRIVE_FILENAME = 'maraicher_data.json';
 const DRIVE_MIME = 'application/json';
+const DRIVE_FILE_ID = '1Fvoz-umn664x4m-iauBPddSic9tNDbGD'; // ID fixe partagé
 
 let data = {
   products:[],
@@ -439,29 +440,12 @@ function disconnectDrive(){
 }
 
 async function findOrCreateFile(){
-  try{
-    const res = await gapi.client.drive.files.list({
-      q:`name='${DRIVE_FILENAME}' and mimeType='${DRIVE_MIME}' and trashed=false`,
-      spaces:'drive', fields:'files(id,name)'
-    });
-    const files = res.result.files;
-    if(files && files.length>0){
-      driveState.fileId = files[0].id;
-    } else {
-      const createRes = await gapi.client.drive.files.create({
-        resource:{name:DRIVE_FILENAME,mimeType:DRIVE_MIME},
-        fields:'id'
-      });
-      driveState.fileId = createRes.result.id;
-    }
-    // Always save fileId so next session finds the same file
-    localStorage.setItem('maraicher_drive', JSON.stringify({
-      fileId:driveState.fileId, clientId:driveState.clientId, lastSync:driveState.lastSync
-    }));
-    showDriveStatus('Fichier Drive trouvé: '+driveState.fileId.slice(0,12)+'…','info');
-  }catch(e){
-    showDriveStatus('Erreur findOrCreate: '+e.message,'error');
-  }
+  // Utilise l'ID fixe directement — plus fiable sur tous les appareils
+  driveState.fileId = DRIVE_FILE_ID;
+  localStorage.setItem('maraicher_drive', JSON.stringify({
+    fileId:driveState.fileId, clientId:driveState.clientId, lastSync:driveState.lastSync
+  }));
+  showDriveStatus('Fichier Drive configuré ✓','info');
 }
 
 async function pullFromDrive(){
