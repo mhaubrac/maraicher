@@ -84,10 +84,15 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 input:focus,select:focus{outline:none;border-color:var(--green2)}
 
 /* Col widths treatments */
-.c-date{width:95px}.c-parc{width:80px}.c-jard{width:48px}.c-planch{width:52px}
-.c-cult{width:80px}.c-surf{width:55px}.c-prod{width:85px}.c-qty{width:52px}.c-note{width:80px}.c-del{width:26px}
+.c-date{width:92px}.c-parc{width:78px}.c-jard{width:46px}.c-planch{width:50px}
+.c-cult{width:78px}.c-surf{width:52px}.c-prods{width:160px}.c-note{width:75px}.c-del{width:26px}
 /* Col widths stocks */
 .cs-date{width:95px}.cs-prod{width:100px}.cs-qty{width:70px}.cs-four{width:100px}
+
+.prod-lines{display:flex;flex-direction:column;gap:4px}
+.prod-line{display:flex;align-items:center;gap:3px}
+.btn-add-prod{margin-top:4px;font-size:11px;color:var(--green);background:none;border:none;cursor:pointer;padding:2px 0;text-align:left}
+.btn-add-prod:active{opacity:.6}
 
 /* Buttons */
 .btn-add{display:flex;align-items:center;justify-content:center;gap:7px;margin:10px 0 4px;padding:11px;background:var(--green-light);border:1px solid var(--green-mid);border-radius:var(--radius-lg);color:var(--green);font-size:13px;font-weight:500;cursor:pointer;width:100%;transition:.15s}
@@ -184,12 +189,12 @@ input:focus,select:focus{outline:none;border-color:var(--green2)}
           <colgroup>
             <col class="c-date"><col class="c-parc"><col class="c-jard">
             <col class="c-planch"><col class="c-cult"><col class="c-surf">
-            <col class="c-prod"><col class="c-qty"><col class="c-note"><col class="c-del">
+            <col class="c-prods"><col class="c-note"><col class="c-del">
           </colgroup>
           <thead><tr>
             <th>Date</th><th>Parcelle</th><th>Jardin</th>
             <th>Planche</th><th>Culture</th><th>Surface</th>
-            <th>Produit</th><th>Qté</th><th>Note</th><th></th>
+            <th>Produits &amp; Qtés</th><th>Note</th><th></th>
           </tr></thead>
           <tbody id="treat-body"></tbody>
         </table>
@@ -694,8 +699,12 @@ function computeStocks(){
     totals[s.product].qty += parseFloat(s.qty)||0;
   });
   (data.treatments||[]).forEach(t=>{
-    if(!totals[t.product]) totals[t.product]={unit:'',qty:0};
-    totals[t.product].qty -= parseFloat(t.qty)||0;
+    const produits = t.produits && t.produits.length ? t.produits : (t.product ? [{product:t.product,qty:t.qty}] : []);
+    produits.forEach(p=>{
+      if(!p.product) return;
+      if(!totals[p.product]) totals[p.product]={unit:'',qty:0};
+      totals[p.product].qty -= parseFloat(p.qty)||0;
+    });
   });
   return totals;
 }
@@ -703,13 +712,33 @@ function computeStocks(){
 /* =========================================================
    TRAITEMENTS
    ========================================================= */
+function sortedTreatments(){
+  return [...(data.treatments||[])].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+}
+
 function renderTreatments(){
   const tb = document.getElementById('treat-body');
-  if(!(data.treatments||[]).length){
-    tb.innerHTML=`<tr><td colspan="10"><div class="empty"><div class="empty-icon">🌿</div>Aucun traitement enregistré</div></td></tr>`;
+  const sorted = sortedTreatments();
+  if(!sorted.length){
+    tb.innerHTML=`<tr><td colspan="7"><div class="empty"><div class="empty-icon">🌿</div>Aucun traitement enregistré</div></td></tr>`;
     return;
   }
-  tb.innerHTML = data.treatments.map((t,i)=>`
+  tb.innerHTML = sorted.map((t,si)=>{
+    const i = data.treatments.indexOf(t); // real index in data array
+    const produits = t.produits && t.produits.length ? t.produits : [{product:t.product||'',qty:t.qty||''}];
+    const produitsHTML = produits.map((p,pi)=>`
+      <div class="prod-line">
+        <select onchange="updTProd(${i},${pi},'product',this.value)" style="flex:1">
+          ${buildOpts(data.products.map(pr=>pr.name),p.product,'product')}
+        </select>
+        <input type="number" value="${esc(p.qty)}" min="0" step="0.01" placeholder="Qté"
+          onchange="updTProd(${i},${pi},'qty',this.value)"
+          style="width:58px;flex:none">
+        ${produits.length>1?`<button class="btn-del-row" onclick="delTProd(${i},${pi})" style="flex:none">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>`:''}
+      </div>`).join('');
+    return `
     <tr>
       <td><input type="date" value="${esc(t.date)}" onchange="updT(${i},'date',this.value)"></td>
       <td><select onchange="handleSelectChange(this,'treat',${i},'parcelle')">${buildOpts(data.parcelles,t.parcelle,'parcelle')}</select></td>
@@ -717,20 +746,47 @@ function renderTreatments(){
       <td><input type="text" value="${esc(t.planche)}" placeholder="n°" onchange="updT(${i},'planche',this.value)"></td>
       <td><select onchange="handleSelectChange(this,'treat',${i},'culture')">${buildOpts(data.cultures,t.culture,'culture')}</select></td>
       <td><input type="number" value="${esc(t.surface)}" min="0" step="0.1" placeholder="m²" onchange="updT(${i},'surface',this.value)"></td>
-      <td><select onchange="handleSelectChange(this,'treat',${i},'product')">${buildOpts(data.products.map(p=>p.name),t.product,'product')}</select></td>
-      <td><input type="number" value="${esc(t.qty)}" min="0" step="0.01" onchange="updT(${i},'qty',this.value)"></td>
+      <td>
+        <div class="prod-lines">${produitsHTML}</div>
+        <button class="btn-add-prod" onclick="addTProd(${i})">+ produit</button>
+      </td>
       <td><input type="text" value="${esc(t.note)}" placeholder="…" onchange="updT(${i},'note',this.value)"></td>
       <td><button class="btn-del-row" onclick="delTreat(${i})" aria-label="Supprimer">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
       </button></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
+
 function addTreatRow(){
   if(!data.treatments) data.treatments=[];
-  data.treatments.unshift({_id:uid(),date:today(),parcelle:'',jardin:'',planche:'',culture:'',surface:'',product:'',qty:'',note:''});
+  data.treatments.unshift({_id:uid(),date:today(),parcelle:'',jardin:'',planche:'',culture:'',surface:'',produits:[{product:'',qty:''}],note:''});
   save(); renderTreatments();
 }
-function updT(i,k,v){ data.treatments[i][k]=v; save(); if(k==='qty'||k==='product') renderStockBadges(); }
+
+function updT(i,k,v){
+  data.treatments[i][k]=v;
+  if(k==='date') data.treatments.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  save(); renderTreatments(); renderStockBadges();
+}
+
+function updTProd(i,pi,k,v){
+  if(!data.treatments[i].produits) data.treatments[i].produits=[{product:'',qty:''}];
+  data.treatments[i].produits[pi][k]=v;
+  save(); renderStockBadges();
+}
+
+function addTProd(i){
+  if(!data.treatments[i].produits) data.treatments[i].produits=[];
+  data.treatments[i].produits.push({product:'',qty:''});
+  save(); renderTreatments();
+}
+
+function delTProd(i,pi){
+  data.treatments[i].produits.splice(pi,1);
+  save(); renderTreatments(); renderStockBadges();
+}
+
 function delTreat(i){ data.treatments.splice(i,1); save(); renderTreatments(); renderStockBadges(); }
 
 /* =========================================================
@@ -758,7 +814,10 @@ function renderStocks(){
     tb.innerHTML=`<tr><td colspan="5"><div class="empty"><div class="empty-icon">📦</div>Aucune entrée stock</div></td></tr>`;
     return;
   }
-  tb.innerHTML = data.stocks.map((s,i)=>`
+  const sorted = [...data.stocks].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  tb.innerHTML = sorted.map((s)=>{
+    const i = data.stocks.indexOf(s);
+    return `
     <tr>
       <td><input type="date" value="${esc(s.date)}" onchange="updS(${i},'date',this.value)"></td>
       <td><select onchange="handleSelectChange(this,'stock',${i},'product')">${buildOpts(data.products.map(p=>p.name),s.product,'product')}</select></td>
@@ -767,7 +826,8 @@ function renderStocks(){
       <td><button class="btn-del-row" onclick="delStock(${i})" aria-label="Supprimer">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
       </button></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 function addStockRow(){
   if(!data.stocks) data.stocks=[];
